@@ -1,0 +1,191 @@
+# ==============================================================
+# Pipeline CI/CD - GitHub Actions
+# Déclenché sur chaque push sur main ou création de tag
+# Étapes : Build -> Test -> Push ECR -> Déploiement
+# ==============================================================
+
+name: CI/CD Nextcloud Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*.*.*" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  AWS_REGION: eu-west-1
+  ECR_REPOSITORY: nextcloud-custom
+
+jobs:
+
+  # ============================================================
+  # JOB 1 : Build et test de l'image Docker
+  # ============================================================
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      # --- Configuration de Docker Buildx (builds multi-platform) ---
+      - name: Configuration de Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # --- Cache des layers Docker pour accélérer les builds ---
+      - name: Cache des layers Docker
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      # --- Build de l'image ---
+      - name: Build de l'image Nextcloud
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false      # On ne push pas encore (juste build pour tester)
+          tags: nextcloud-custom:test
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+      # --- Test basique de l'image ---
+      - name: Test du conteneur
+        run: |
+          docker run --rm -d --name test-nextcloud nextcloud-custom:test
+          sleep 10
+          docker ps | grep test-nextcloud
+          docker stop test-nextcloud
+          echo "Test réussi !"
+
+      # --- Lint du docker-compose ---
+      - name: Validation du docker-compose
+        run: |
+          docker compose config --quiet
+          echo "docker-compose.yml valide !"
+
+      # Déplace le cache pour éviter la croissance indéfinie
+      - name: Rotation du cache Docker
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+  # ============================================================
+  # JOB 2 : Push vers Amazon ECR (uniquement sur main)
+  # ============================================================
+  push-to-ecr:
+    name: Push vers ECR
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build-push.outputs.digest }}
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      # --- Authentification AWS (utilise les secrets GitHub) ---
+      - name: Configuration des credentials AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # --- Login vers Amazon ECR ---
+      - name: Login vers Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # --- Génération des tags de l'image ---
+      - name: Extraction des métadonnées (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+
+      - name: Configuration de Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # --- Build ET push vers ECR ---
+      - name: Build et Push vers ECR
+        id: build-push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image publiée avec succès
+        run: |
+          echo "Image: ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}"
+          echo "Digest: ${{ steps.build-push.outputs.digest }}"
+
+  # ============================================================
+  # JOB 3 : Déploiement automatique sur le serveur
+  # ============================================================
+  deploy:
+    name: Déploiement
+    needs: push-to-ecr
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production    # Environnement GitHub avec approbation manuelle
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      # --- Déploiement via SSH sur le serveur cible ---
+      - name: Déploiement via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script: |
+            set -e
+            cd /opt/nextcloud-project
+
+            # Récupère les derniers fichiers de config
+            git pull origin main
+
+            # Login ECR depuis le serveur
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+              docker login --username AWS --password-stdin \
+              ${{ secrets.ECR_REGISTRY }}
+
+            # Pull la nouvelle image
+            docker compose pull nextcloud_app1 nextcloud_app2 nextcloud_cron
+
+            # Déploiement sans interruption (rolling update)
+            docker compose up -d --no-deps nextcloud_app1
+            sleep 30
+            docker compose up -d --no-deps nextcloud_app2
+
+            # Vérification du déploiement
+            docker compose ps
+            echo "Déploiement réussi !"
+
+      - name: Notification de déploiement
+        if: always()
+        run: |
+          echo "Déploiement terminé - Statut: ${{ job.status }}"
+          # Ici vous pouvez ajouter une notification Slack/email
