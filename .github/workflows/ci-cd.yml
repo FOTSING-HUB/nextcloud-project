@@ -47,7 +47,7 @@ jobs:
       - name: Build de l'image Nextcloud
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./nextcloud
           file: ./nextcloud/Dockerfile
           push: false      # On ne push pas encore (juste build pour tester)
           tags: nextcloud-custom:test
@@ -125,7 +125,7 @@ jobs:
         id: build-push
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ./nextcloud
           file: ./nextcloud/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
