@@ -1,0 +1,51 @@
+# ==============================================================
+# Prometheus - Configuration de collecte des métriques
+# ==============================================================
+
+global:
+  scrape_interval: 15s        # Fréquence de collecte
+  evaluation_interval: 15s    # Fréquence d'évaluation des règles
+  external_labels:
+    project: "nextcloud-cloud"
+    environment: "production"
+
+# --- Règles d'alertes (optionnel - à étendre) ---
+rule_files:
+  # - "alert_rules.yml"
+
+# ==============================================================
+# Cibles de collecte (scrape targets)
+# ==============================================================
+scrape_configs:
+
+  # Prometheus se surveille lui-même
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Métriques système de la VM hôte
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+    # node-exporter expose : CPU, RAM, disque, réseau
+
+  # Métriques des conteneurs Docker
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+    # cadvisor expose : CPU/RAM par conteneur, I/O, réseau
+
+  # Métriques PostgreSQL
+  - job_name: "postgres-exporter"
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  # Métriques Redis
+  - job_name: "redis-exporter"
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  # Métriques Nginx
+  - job_name: "nginx"
+    static_configs:
+      - targets: ["nginx:9113"]

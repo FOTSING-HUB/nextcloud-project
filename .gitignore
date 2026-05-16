@@ -1,0 +1,23 @@
+# Secrets - ne jamais commiter !
+.env
+*.pem
+*.key
+*.crt
+rclone.conf
+
+# Données locales
+data/
+volumes/
+ssl/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/

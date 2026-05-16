@@ -1,0 +1,15 @@
+# ==============================================================
+# Configuration rclone pour AWS S3
+# ATTENTION : Ce fichier contient des secrets !
+# Il est exclu de Git via .gitignore
+# En production, utiliser les variables d'environnement AWS
+# ==============================================================
+
+[s3]
+type = s3
+provider = AWS
+env_auth = true          # Utilise AWS_ACCESS_KEY_ID et AWS_SECRET_ACCESS_KEY
+region = eu-west-1       # Adapter à votre région AWS
+acl = private
+server_side_encryption = AES256
+storage_class = STANDARD_IA    # Infrequent Access = moins cher pour les backups
