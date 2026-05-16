@@ -48,7 +48,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          file: ./nextcloud/Dockerfile
           push: false      # On ne push pas encore (juste build pour tester)
           tags: nextcloud-custom:test
           cache-from: type=local,src=/tmp/.buildx-cache
@@ -126,7 +126,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          file: ./nextcloud/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
