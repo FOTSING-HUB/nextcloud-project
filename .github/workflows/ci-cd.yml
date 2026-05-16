@@ -50,6 +50,7 @@ jobs:
           context: ./nextcloud
           file: ./nextcloud/Dockerfile
           push: false      # On ne push pas encore (juste build pour tester)
+          load: true
           tags: nextcloud-custom:test
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
