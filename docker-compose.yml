@@ -21,6 +21,7 @@ volumes:
   postgres_data:      # Données PostgreSQL
   redis_data:         # Cache Redis
   nginx_certs:        # Certificats SSL
+  nextcloud_html:     # Fichiers core Nextcloud
   prometheus_data:    # Métriques Prometheus
   grafana_data:       # Dashboards Grafana
   loki_data:          # Logs centralisés
@@ -39,7 +40,9 @@ services:
       - ./nginx/ssl-init.sh:/ssl-init.sh:ro
     entrypoint: ["sh", "/ssl-init.sh"]
     restart: "no"
-
+    ports:
+    - "80:80"
+    - "443:443"
   # ---- WAF ModSecurity (OWASP CRS) - point d'entrée public ----
   modsecurity:
     image: owasp/modsecurity-crs:nginx-alpine
@@ -82,7 +85,10 @@ services:
       - "8080"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - nextcloud_data:/var/www/html:ro
+      - nextcloud_html:/var/www/html:ro
+      - nextcloud_data:/var/www/html/data:ro
+      - nextcloud_config:/var/www/html/config:ro
+      - nextcloud_apps:/var/www/html/custom_apps:ro
     networks:
       - frontend
     depends_on:
@@ -118,6 +124,7 @@ services:
       - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT}
       - PHP_UPLOAD_LIMIT=${PHP_UPLOAD_LIMIT}
     volumes:
+      - nextcloud_html:/var/www/html
       - nextcloud_data:/var/www/html/data
       - nextcloud_config:/var/www/html/config
       - nextcloud_apps:/var/www/html/custom_apps
@@ -157,6 +164,7 @@ services:
       - PHP_MEMORY_LIMIT=${PHP_MEMORY_LIMIT}
       - PHP_UPLOAD_LIMIT=${PHP_UPLOAD_LIMIT}
     volumes:
+      - nextcloud_html:/var/www/html
       - nextcloud_data:/var/www/html/data     # Même volume partagé !
       - nextcloud_config:/var/www/html/config
       - nextcloud_apps:/var/www/html/custom_apps
@@ -243,6 +251,8 @@ services:
     image: prom/prometheus:latest
     container_name: prometheus
     restart: unless-stopped
+    ports:
+      - "9090:9090"
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=15d"
